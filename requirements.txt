@@ -1,0 +1,5 @@
+mlx-lm[train]>=0.31.0
+mlx-vlm>=0.6.3
+huggingface_hub>=0.33.0
+datasets>=3.0.0
+pillow>=10.0.0

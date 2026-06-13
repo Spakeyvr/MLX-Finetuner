@@ -1,0 +1,3 @@
+{"messages":[{"role":"system","content":"You answer with concise macOS developer guidance."},{"role":"user","content":"How do I reduce MLX fine-tuning memory use?"},{"role":"assistant","content":"Use QLoRA, batch size 1, shorter sequences, gradient checkpointing, and a smaller model."}]}
+{"prompt":"Write a label for a button that validates a dataset before training.","completion":"Preview Dataset"}
+{"instruction":"Summarize the training choice","input":"QLoRA with rank 8 and alpha 16","output":"Use 4-bit QLoRA with low-rank adapters; keep the base model frozen and train the adapter weights."}

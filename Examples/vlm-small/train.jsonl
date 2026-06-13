@@ -1,0 +1,2 @@
+{"messages":[{"role":"user","content":[{"type":"image","image":"sample.ppm"},{"type":"text","text":"Describe the image in one sentence."}]},{"role":"assistant","content":[{"type":"text","text":"A tiny colorful test grid with red, blue, green, white, and yellow blocks."}]}]}
+{"images":["sample.ppm"],"messages":[{"role":"user","content":[{"type":"image","image":"sample.ppm"},{"type":"text","text":"What kind of sample is this?"}]},{"role":"assistant","content":[{"type":"text","text":"It is a synthetic local image used to verify VLM dataset parsing."}]}]}
