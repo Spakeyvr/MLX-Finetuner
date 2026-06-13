@@ -1,0 +1,19 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MLX Finetuner network icon">
+  <g stroke="#111111" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 38L66 78L66 143L128 218L190 143L190 78L128 38Z"/>
+    <path d="M66 78L128 113L190 78"/>
+    <path d="M66 143L128 113L190 143"/>
+    <path d="M128 38V218"/>
+    <path d="M66 78L128 218L190 78"/>
+    <path d="M66 143L128 38L190 143"/>
+  </g>
+  <g fill="#FFFFFF" stroke="#111111" stroke-width="7">
+    <circle cx="128" cy="38" r="15"/>
+    <circle cx="66" cy="78" r="15"/>
+    <circle cx="190" cy="78" r="15"/>
+    <circle cx="128" cy="113" r="15"/>
+    <circle cx="66" cy="143" r="15"/>
+    <circle cx="190" cy="143" r="15"/>
+    <circle cx="128" cy="218" r="15"/>
+  </g>
+</svg>
