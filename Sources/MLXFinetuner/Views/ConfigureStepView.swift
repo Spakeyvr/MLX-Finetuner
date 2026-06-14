@@ -11,6 +11,10 @@ struct ConfigureStepView: View {
                     subtitle: "Choose full fine-tuning or QLoRA explicitly. VLM runs can train the language model, vision encoder, or both."
                 )
 
+                if let summary = store.configureCompatibilitySummary {
+                    WarningStrip(text: summary)
+                }
+
                 FormSection(title: "Training Method") {
                     Picker("Method", selection: $store.method) {
                         ForEach(TrainingMethod.allCases) { method in
@@ -37,6 +41,10 @@ struct ConfigureStepView: View {
                             }
                             GridRow {
                                 DoubleField(label: "Dropout", value: $store.loraDropout, range: 0...0.9)
+                                NumberField(label: "LoRA layers", value: $store.loraLayers, range: 1...256)
+                            }
+                            GridRow {
+                                Toggle("Gradient checkpointing", isOn: $store.gradCheckpoint)
                                 LabeledContent("Target modules") {
                                     TextField("q_proj,v_proj", text: $store.targetModules)
                                         .textFieldStyle(.roundedBorder)
@@ -85,6 +93,16 @@ struct ConfigureStepView: View {
                     }
                 }
 
+                FormSection(title: "Validation") {
+                    Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
+                        GridRow {
+                            NumberField(label: "Validation split (%)", value: $store.validationSplitPercent, range: 0...50)
+                            Text(store.validationSplitPercent == 0 ? "Disabled" : "\(100 - store.validationSplitPercent)% train / \(store.validationSplitPercent)% validation")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 FormSection(title: "Output") {
                     LabeledContent("Output directory") {
                         PathPicker(path: $store.outputDirectory, canChooseFiles: false, canChooseDirectories: true)
@@ -96,6 +114,15 @@ struct ConfigureStepView: View {
             }
             .padding(24)
             .frame(maxWidth: 980, alignment: .leading)
+        }
+        .onAppear {
+            store.applyConfigureModelDefaults()
+        }
+        .onChange(of: store.modelId) { _, _ in
+            store.applyConfigureModelDefaults()
+        }
+        .onChange(of: store.modelInspection?.family) { _, _ in
+            store.applyConfigureModelDefaults()
         }
     }
 }

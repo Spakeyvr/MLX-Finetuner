@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum BackendClientError: LocalizedError {
@@ -77,6 +78,7 @@ final class MLXBackendClient {
 
                 let stdoutBuffer = LockedLineBuffer()
                 let stderrBuffer = LockedLineBuffer()
+                let outputTail = LockedLogTail(limit: 80)
                 let resumeGate = LockedGate()
 
                 @Sendable func resumeOnce(_ result: Result<Void, Error>) {
@@ -97,6 +99,7 @@ final class MLXBackendClient {
                     let lines = stdoutBuffer.append(data)
 
                     for line in lines {
+                        outputTail.append(line)
                         if let event = decodeEvent(line) {
                             onEvent(event)
                         } else {
@@ -109,7 +112,10 @@ final class MLXBackendClient {
                     let data = handle.availableData
                     guard !data.isEmpty else { return }
                     let lines = stderrBuffer.append(data)
-                    lines.forEach(onRawLine)
+                    for line in lines {
+                        outputTail.append(line)
+                        onRawLine(line)
+                    }
                 }
 
                 process.terminationHandler = { proc in
@@ -118,6 +124,7 @@ final class MLXBackendClient {
                     if !remainingOut.isEmpty {
                         for line in remainingOut.split(whereSeparator: \.isNewline) {
                             let text = String(line)
+                            outputTail.append(text)
                             if let event = decodeEvent(text) {
                                 onEvent(event)
                             } else {
@@ -127,16 +134,16 @@ final class MLXBackendClient {
                     }
                     if !remainingErr.isEmpty {
                         for line in remainingErr.split(whereSeparator: \.isNewline) {
-                            onRawLine(String(line))
+                            let text = String(line)
+                            outputTail.append(text)
+                            onRawLine(text)
                         }
                     }
                     self.currentTrainingProcess = nil
                     if proc.terminationStatus == 0 {
                         resumeOnce(.success(()))
-                    } else if proc.terminationReason == .uncaughtSignal {
-                        resumeOnce(.failure(BackendClientError.commandFailed("Training was stopped.")))
                     } else {
-                        resumeOnce(.failure(BackendClientError.commandFailed("Training exited with status \(proc.terminationStatus).")))
+                        resumeOnce(.failure(BackendClientError.commandFailed(trainingFailureMessage(for: proc, outputTail: outputTail.snapshot()))))
                     }
                 }
 
@@ -354,6 +361,27 @@ private func cleanBackendError(stdout: String, stderr: String) -> String {
     return fallback.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+private func trainingFailureMessage(for process: Process, outputTail: [String]) -> String {
+    let base: String
+    if process.terminationReason == .uncaughtSignal {
+        let signal = process.terminationStatus
+        if signal == SIGABRT {
+            base = "Training was aborted by SIGABRT while MLX/Metal was running. This usually means unified-memory pressure during allocation."
+        } else {
+            base = "Training stopped after signal \(signal)."
+        }
+    } else {
+        base = "Training exited with status \(process.terminationStatus)."
+    }
+
+    let recent = outputTail
+        .suffix(14)
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n")
+    guard !recent.isEmpty else { return base }
+    return "\(base)\nRecent backend output:\n\(recent)"
+}
+
 private final class LockedLineBuffer: @unchecked Sendable {
     private let lock = NSLock()
     private var buffer = Data()
@@ -372,6 +400,31 @@ private final class LockedLineBuffer: @unchecked Sendable {
             lock.unlock()
         }
         return String(data: buffer, encoding: .utf8) ?? ""
+    }
+}
+
+private final class LockedLogTail: @unchecked Sendable {
+    private let lock = NSLock()
+    private let limit: Int
+    private var lines: [String] = []
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+    }
+
+    func append(_ line: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        lines.append(line)
+        if lines.count > limit {
+            lines.removeFirst(lines.count - limit)
+        }
+    }
+
+    func snapshot() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return lines
     }
 }
 

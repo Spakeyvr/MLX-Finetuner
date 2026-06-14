@@ -47,6 +47,11 @@ struct ContentView: View {
         .task {
             await store.prepareBackendEnvironment()
         }
+        .onChange(of: store.selectedStep) { _, step in
+            if step == .configure {
+                store.applyConfigureModelDefaults()
+            }
+        }
     }
 
     @ViewBuilder

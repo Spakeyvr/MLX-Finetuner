@@ -20,10 +20,13 @@ final class AppStore: ObservableObject {
     @Published var steps = 100
     @Published var epochs = 0.0
     @Published var gradientAccumulation = 1
+    @Published var gradCheckpoint = false
     @Published var warmupSteps = 0
+    @Published var validationSplitPercent = 10
     @Published var imageResolution = 768
     @Published var maxPixels = 1_048_576
     @Published var qloraBits = 4
+    @Published var loraLayers = 16
     @Published var loraRank = 8
     @Published var loraAlpha = 16
     @Published var loraDropout = 0.0
@@ -48,6 +51,7 @@ final class AppStore: ObservableObject {
 
     private let backend = MLXBackendClient()
     private var didStartBackendPreparation = false
+    private var lastConfigureDefaultsKey = ""
 
     var detectedBackend: ModelKind {
         modelInspection?.kind ?? datasetPreview?.kind ?? .unknown
@@ -60,6 +64,28 @@ final class AppStore: ObservableObject {
         let imageFactor = detectedBackend == .visionLanguage ? Double(maxPixels) / 1_048_576.0 : 0.0
         let gb = max(2.0, base * seqFactor * max(1.0, batchFactor) + imageFactor * 2.0)
         return String(format: "~%.1f GB unified memory", gb)
+    }
+
+    var logText: String {
+        logs.joined(separator: "\n")
+    }
+
+    var configureCompatibilitySummary: String? {
+        guard configureRecommendedSettings() != nil else { return nil }
+        let normalized = normalizedModelReference(
+            [
+                modelId,
+                modelInspection?.family,
+                modelInspection?.modelType,
+                modelInspection?.architecture
+            ]
+                .compactMap { $0 }
+                .joined(separator: " ")
+        )
+        if normalized.contains("qwen35") || normalized.contains("qwen36") {
+            return "Qwen3.5/3.6 defaults active: VLM backend, QLoRA, checkpointing, and hybrid LoRA targets."
+        }
+        return "Qwen defaults active: QLoRA, checkpointing, batch size 1, and Qwen attention LoRA targets."
     }
 
     func prepareBackendEnvironment() async {
@@ -97,11 +123,163 @@ final class AppStore: ObservableObject {
             if inspection.kind == .visionLanguage {
                 vlmComponent = .languageModel
             }
+            applyRecommendedSettings(inspection.recommendedSettings)
             selectedStep = .dataset
         } catch {
             statusMessage = "Model inspection failed: \(error.localizedDescription)"
         }
         isWorking = false
+    }
+
+    private func applyRecommendedSettings(_ settings: ModelRecommendedSettings?) {
+        guard let settings else { return }
+        if let method = settings.method {
+            self.method = method
+        }
+        if let vlmComponent = settings.vlmComponent {
+            self.vlmComponent = vlmComponent
+        }
+        if let batchSize = settings.batchSize {
+            self.batchSize = batchSize
+        }
+        if let maxSeqLength = settings.maxSeqLength, self.maxSeqLength <= 2048 {
+            self.maxSeqLength = maxSeqLength
+        }
+        if let gradientAccumulation = settings.gradientAccumulation {
+            self.gradientAccumulation = gradientAccumulation
+        }
+        if let gradCheckpoint = settings.gradCheckpoint {
+            self.gradCheckpoint = gradCheckpoint
+        }
+        if let imageResolution = settings.imageResolution {
+            self.imageResolution = imageResolution
+        }
+        if let maxPixels = settings.maxPixels {
+            self.maxPixels = maxPixels
+        }
+        if let qloraBits = settings.qloraBits {
+            self.qloraBits = qloraBits
+        }
+        if let loraLayers = settings.loraLayers {
+            self.loraLayers = loraLayers
+        }
+        if let loraRank = settings.loraRank {
+            self.loraRank = loraRank
+        }
+        if let loraAlpha = settings.loraAlpha {
+            self.loraAlpha = loraAlpha
+        }
+        if let loraDropout = settings.loraDropout {
+            self.loraDropout = loraDropout
+        }
+        if let targetModules = settings.targetModules, self.targetModules == "q_proj,v_proj" || self.targetModules.isEmpty {
+            self.targetModules = targetModules
+        }
+    }
+
+    func applyConfigureModelDefaults(force: Bool = false) {
+        let key = "\(modelId)|\(modelInspection?.family ?? "")|\(modelInspection?.kind.rawValue ?? "")"
+        guard (force || lastConfigureDefaultsKey != key), let settings = configureRecommendedSettings() else { return }
+        applyRecommendedSettings(settings)
+        lastConfigureDefaultsKey = key
+        statusMessage = "Applied Qwen-compatible Configure defaults."
+    }
+
+    private func configureRecommendedSettings() -> ModelRecommendedSettings? {
+        if let settings = modelInspection?.recommendedSettings, hasRecommendedSettings(settings) {
+            return settings
+        }
+
+        let normalized = normalizedModelReference(
+            [
+                modelId,
+                modelInspection?.family,
+                modelInspection?.modelType,
+                modelInspection?.architecture
+            ]
+                .compactMap { $0 }
+                .joined(separator: " ")
+        )
+        guard normalized.contains("qwen") else { return nil }
+
+        let isQwenHybrid = normalized.contains("qwen35") || normalized.contains("qwen36")
+        let isQwenHybridMoE = isQwenHybrid && (normalized.contains("moe") || normalized.range(of: #"a\d+b"#, options: .regularExpression) != nil)
+        let isVLM = detectedBackend == .visionLanguage || isQwenHybrid || normalized.contains("vl")
+
+        if isQwenHybrid {
+            return ModelRecommendedSettings(
+                backend: .visionLanguage,
+                method: .qlora,
+                vlmComponent: .languageModel,
+                batchSize: 1,
+                maxSeqLength: isQwenHybridMoE ? 2048 : 4096,
+                gradientAccumulation: 1,
+                gradCheckpoint: true,
+                imageResolution: 768,
+                maxPixels: 1_048_576,
+                qloraBits: 4,
+                loraLayers: isQwenHybridMoE ? 8 : 16,
+                loraRank: 8,
+                loraAlpha: 16,
+                loraDropout: 0.0,
+                targetModules: qwenHybridTargetModules
+            )
+        }
+
+        return ModelRecommendedSettings(
+            backend: isVLM ? .visionLanguage : nil,
+            method: .qlora,
+            vlmComponent: isVLM ? .languageModel : nil,
+            batchSize: 1,
+            maxSeqLength: nil,
+            gradientAccumulation: 1,
+            gradCheckpoint: true,
+            imageResolution: isVLM ? 768 : nil,
+            maxPixels: isVLM ? 1_048_576 : nil,
+            qloraBits: 4,
+            loraLayers: 16,
+            loraRank: 8,
+            loraAlpha: 16,
+            loraDropout: 0.0,
+            targetModules: qwenTargetModules
+        )
+    }
+
+    private func hasRecommendedSettings(_ settings: ModelRecommendedSettings) -> Bool {
+        settings.backend != nil ||
+            settings.method != nil ||
+            settings.vlmComponent != nil ||
+            settings.batchSize != nil ||
+            settings.maxSeqLength != nil ||
+            settings.gradientAccumulation != nil ||
+            settings.gradCheckpoint != nil ||
+            settings.imageResolution != nil ||
+            settings.maxPixels != nil ||
+            settings.qloraBits != nil ||
+            settings.loraLayers != nil ||
+            settings.loraRank != nil ||
+            settings.loraAlpha != nil ||
+            settings.loraDropout != nil ||
+            settings.targetModules != nil
+    }
+
+    private func normalizedModelReference(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    private var qwenTargetModules: String {
+        "self_attn.q_proj,self_attn.k_proj,self_attn.v_proj,self_attn.o_proj"
+    }
+
+    private var qwenHybridTargetModules: String {
+        [
+            qwenTargetModules,
+            "linear_attn.in_proj_qkv",
+            "linear_attn.in_proj_z",
+            "linear_attn.in_proj_b",
+            "linear_attn.in_proj_a",
+            "linear_attn.out_proj"
+        ].joined(separator: ",")
     }
 
     func previewDataset() async {
@@ -133,6 +311,7 @@ final class AppStore: ObservableObject {
 
     func startTraining() async {
         guard !isTraining else { return }
+        applyConfigureModelDefaults(force: true)
         logs.removeAll()
         metrics.removeAll()
         currentStep = 0
@@ -243,10 +422,13 @@ final class AppStore: ObservableObject {
             steps: steps,
             epochs: epochs,
             gradientAccumulation: gradientAccumulation,
+            gradCheckpoint: gradCheckpoint,
             warmupSteps: warmupSteps,
+            validationSplitPercent: validationSplitPercent,
             imageResolution: imageResolution,
             maxPixels: maxPixels,
             qloraBits: qloraBits,
+            loraLayers: loraLayers,
             loraRank: loraRank,
             loraAlpha: loraAlpha,
             loraDropout: loraDropout,

@@ -88,10 +88,30 @@ struct ModelInspection: Codable {
     var modelId: String
     var localPath: String?
     var kind: ModelKind
+    var family: String?
     var modelType: String?
     var architecture: String?
     var parameterEstimate: String?
+    var recommendedSettings: ModelRecommendedSettings?
     var warnings: [String]
+}
+
+struct ModelRecommendedSettings: Codable {
+    var backend: ModelKind?
+    var method: TrainingMethod?
+    var vlmComponent: VLMComponent?
+    var batchSize: Int?
+    var maxSeqLength: Int?
+    var gradientAccumulation: Int?
+    var gradCheckpoint: Bool?
+    var imageResolution: Int?
+    var maxPixels: Int?
+    var qloraBits: Int?
+    var loraLayers: Int?
+    var loraRank: Int?
+    var loraAlpha: Int?
+    var loraDropout: Double?
+    var targetModules: String?
 }
 
 struct DatasetPreview: Codable {
@@ -167,10 +187,13 @@ struct TrainingConfig: Codable {
     var steps: Int
     var epochs: Double
     var gradientAccumulation: Int
+    var gradCheckpoint: Bool
     var warmupSteps: Int
+    var validationSplitPercent: Int
     var imageResolution: Int
     var maxPixels: Int
     var qloraBits: Int
+    var loraLayers: Int
     var loraRank: Int
     var loraAlpha: Int
     var loraDropout: Double

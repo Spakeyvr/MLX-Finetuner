@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct TrainStepView: View {
     @ObservedObject var store: AppStore
+    @State private var didCopyLogs = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,29 +51,50 @@ struct TrainStepView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Log")
-                    .font(.headline)
+                HStack {
+                    Text("Log")
+                        .font(.headline)
+                    Spacer()
+                    if didCopyLogs {
+                        Text("Copied")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button {
+                        copyLogs()
+                    } label: {
+                        Label("Copy All", systemImage: "doc.on.doc")
+                    }
+                    .disabled(store.logs.isEmpty)
+                }
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 3) {
-                            ForEach(Array(store.logs.enumerated()), id: \.offset) { index, line in
-                                Text(line)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .id(index)
-                            }
-                        }
+                        Text(store.logText.isEmpty ? "No logs yet." : store.logText)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id("logText")
+                            .padding(10)
                     }
                     .onChange(of: store.logs.count) { _, newValue in
                         if newValue > 0 {
-                            proxy.scrollTo(newValue - 1, anchor: .bottom)
+                            proxy.scrollTo("logText", anchor: .bottom)
                         }
                     }
                 }
                 .frame(minHeight: 150, maxHeight: 220)
+                .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
             }
             .padding(16)
+        }
+    }
+
+    private func copyLogs() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(store.logText, forType: .string)
+        didCopyLogs = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            didCopyLogs = false
         }
     }
 }
